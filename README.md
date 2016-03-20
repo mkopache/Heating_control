@@ -1,4 +1,7 @@
 Heating_control
 ===============
 
-provides real time and historical data for efficiently controlling a multi-source hot water heating system.
+Provides bypass of the standard house thermostats so that other thermosensors and relays in communication with a python 
+program can control house heating. 
+
+Provides real time from selected points in the hot water loops of the heating system.
