@@ -1,6 +1,7 @@
 /* Thermister and thermostate bypass control program using 
    Mudbus TCP/IP modbus interface in conjuntion with python under Windows 
    program
+   V1.0   1/24/16
 */
 
 #include <SPI.h>
@@ -49,16 +50,16 @@ wdt_reset();   // reset the WDT timer
  WDTCSR configuration:
  WDIE = 1: Interrupt Enable
  WDE = 1 :Reset Enable
- WDP3 = 1 :For 4000ms Time-out
- WDP2 = 0 :For 4000ms Time-out
- WDP1 = 0 :For 4000ms Time-out
- WDP0 = 0 :For 4000ms Time-out
+ WDP3 = 1 :For 8000ms Time-out
+ WDP2 = 0 :For 8000ms Time-out
+ WDP1 = 0 :For 8000ms Time-out
+ WDP0 = 1 :For 8000ms Time-out
 */
 // Enter Watchdog Configuration mode:
 WDTCSR |= (1<<WDCE) | (1<<WDE);  
 // Set Watchdog settings:  include (1<<WDIE) at front for interrupt
 // Time set for 1 second
-WDTCSR =  (1<<WDIE) | (1<<WDE) | (1<<WDP3) | (0<<WDP2) | (0<<WDP1) | (0<<WDP0);
+WDTCSR =  (1<<WDIE) | (1<<WDE) | (1<<WDP3) | (0<<WDP2) | (0<<WDP1) | (1<<WDP0);
 // enable interrupts
 sei();
 }
@@ -67,8 +68,8 @@ sei();
 void setup(void){
  //setup ethernet and start
   uint8_t mac[]   = { 0x90, 0xA2, 0xDA, 0x00, 0x51, 0x16 };   // not the real address
-  uint8_t ip[]	= { 192, 168, 10, 51};
-  uint8_t gateway[] = { 192,168,10,1};	
+  uint8_t ip[]	= { 192, 168, 0, 51};
+  uint8_t gateway[] = { 192,168,0,1};	
   uint8_t subnet[]  = { 255, 255, 255, 0};
   Ethernet.begin(mac, ip, gateway, subnet);
   Thermosensor[0]= &Thermometer0;
@@ -92,7 +93,7 @@ void setup(void){
    digitalWrite(2,HIGH);
    pinMode(3, OUTPUT);
    digitalWrite(3,HIGH);
-   for (i = 5; i<9; i++) {
+   for (i = 5; i<10; i++) {
      pinMode(i, OUTPUT);
      digitalWrite(i,HIGH);
    }
@@ -138,6 +139,7 @@ void loop(void){
               Serial.println(tempF);
            #endif
         }
+        wdt_reset();
 
         if (Mb.C[1] != current_state[1])         // change?
           if (Mb.C[1] > 0) {                     // Thermostat bypass on/off
@@ -164,4 +166,5 @@ void loop(void){
               }
           }
 }
+
 

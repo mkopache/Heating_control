@@ -1,12 +1,20 @@
 '''
-Created on January 16, 2016
+Created on January 16, 2016 V1.0
 
 @author: Mark 
-
+V1.0
 The programs receives temperatures and gives commands to the Arduino that controls the 
 thermostats in the house. 
 see Thermostat controls document for crosswalk of coils to arduino pins to relays to zones
 MODBUS master(server) over TCP/IP
+This program communicates with Thermostatctrl.ino for the arduino. Version should be the same.
+V2.0   -- March 18, 2016
+Program was renamed to TarmRoom
+Another Arduino was added that is located in the TarmRoom. The Arduino reads temps from the 
+injector and the exchanger and makes them available to this program via registers. This version
+reads the temps and displays them.  New Associated arduino program is tarmroom.ino
+Additionally, temps now read in .1 degree increments by multiply for 10 at arduino and divide 
+by 10 at the python end. 
 '''
 
 from pymodbus.client.sync import ModbusTcpClient
@@ -16,15 +24,17 @@ import msvcrt                     # windows only
 import smtplib                    
 from datetime import datetime
 info_request = 0
-count = 0 
+count = 0
+max_count = 18 
 on_bypass = False
-email_times = ['08','14','20']           # emails sent at 8am, 2pm, and 8pm
-set_point =[ 0,0,68,68,68]
+coil_values = [0,0,0,0,0]
+email_times = ['08','10','12','14','20']           # emails sent at these hours 
+set_point =[ 0,0,63,63,65]
 zone_names = [" invalid ", "invalid", "Zone 2, Oak Room temp =   "," Zone 3, Music Room temp = ",
   " Zone 4, 2nd Floor temp =  " ] 
 zone_numbers = ['2','3','4']
-valid_temps = ['60','61','62','63','64','65','66','67','68','69','70','71','72','73','74']
-current_temp = [0,0,68,68,68]                 # [0] and [1] not used
+valid_temps = ['55','56','57','58','59','60','61','62','63','64','65','66','67','68','69','70','71','72','73','74']
+current_temp = [0.0,0.0,68.0,68.0,68.0]                 # [0] and [1] not used
 
 
 def kbfunc():                     # check for input without blocking
@@ -39,29 +49,31 @@ def cls():                         # clears the screen
 
 def current_temps():
     for i in range(2,5):
-      if str(current_temp[2]) not in valid_temps :              # temps out of range show as 100F
+      display_temp = current_temp[i]                          # convert back to 10ths as in 68.8
+      if (display_temp < 50.0 or display_temp > 80.0) :       # temps out of range show as 100F
           display_temp = 100
-      else :
-          display_temp = current_temp[i]
-      print zone_names[i], display_temp, "Set = ", set_point[i]
+      print zone_names[i], display_temp, "  Set = ", set_point[i]
     print	
 	
 def command_info():
     global on_bypass
     print
     print " Status : "
-    if therm_client.readCoil(1) == False:
-       print "     Bypass is OFF, All Standard zone Thermostats ON"
-       on_bypass = False
-    else:
+    if count % 3 == 0 :                           # set every 3rd cycle
+       on_bypass = therm_client.readCoil(1)
+    if on_bypass :
        print "     Bypass is ON"
-       on_bypass = True
-    for i in range(2,5):
-      if therm_client.readCoil(i) == False:
-         print "     Zone ",i," is OFF"
-      else:
-         print "     Zone ",i," is ON"
-    print "\n ",30 - count, " cycles to Set Point changes"
+    else :	   
+       print "     Bypass is OFF, All Standard zone Thermostats ON"
+    for i in range(2,5):                            # individual zone information
+      if (count % 3) == 0 :                          # only get arduino coils every 3rd time
+          coil_values[i] = therm_client.readCoil(i)
+      if coil_values[i] == 0 : 
+         c_status = "OFF"
+      else :
+         c_status = "ON"
+      print "     Zone ",i," is ",c_status
+    print "\n ",max_count - count, " cycles to Set Point changes"
     if not info_request:
 	   print "\n"*2
     print " c to enter command, h for help, or x?",
@@ -73,7 +85,7 @@ def syntax_error(line, extra):
 def print_help():
     print "\n syntax : command (arguments)"
     print " commands are : bypass (on or off)"
-    print "              set (zone#) (temp)"
+    print "              set (zone# || all) (temp)"
     print "   'exit' to end program"
     x=raw_input("hit enter to continue")
 	
@@ -108,7 +120,11 @@ def check_commands():                 # ensure command valid and execute command
            else :			   
 			  syntax_error(line, "argument should be on or off")
         elif command == "set":                       # set 
-           if zone in zone_numbers and settemp in valid_temps:         # validate zones # and setpoint value  
+           if zone == "all":
+		      set_point[2] = int(settemp)         # make this more generic
+		      set_point[3] = int(settemp)
+		      set_point[4] = int(settemp)
+           elif zone in zone_numbers and settemp in valid_temps:         # validate zones # and setpoint value  
                set_point[int(zone)] = int(settemp)
            else:
 			  syntax_error(line, "arguments not out of range")
@@ -122,9 +138,9 @@ def print_coils():                     # for testing and problem analysis
 def check_temps():
     if on_bypass:                                      # check temps vs zones and turn off or on
       for i in range(2, 5):                            # range is +- 2 degree
-        if current_temp[i] > set_point[i] or str(current_temp[i]) not in valid_temps:
+        if (current_temp[i] > set_point[i]) or (current_temp[i] < 40.0 or current_temp[i] > 80.0) :
            therm_client.writeCoil(i,False)             # turn off thermostat		 
-        elif current_temp[i] < set_point[i] :
+        elif current_temp[i] < set_point[i]  :
            therm_client.writeCoil(i,True)              # turn on thermostat
 		   
 class MBclient(ModbusTcpClient):
@@ -215,10 +231,11 @@ class MBserver(object):
 if __name__ == "__main__": 
     from time import sleep
 	
-    therm_client = MBclient('192.168.10.51')
+    therm_client = MBclient('192.168.0.51')    # thermisters
+    tarm_client = MBclient('192.168.0.52')   # tarmroom thermisters
     
     master = MBserver(
-                      clients = {1:therm_client}
+                      clients = {1:therm_client, 2:tarm_client}
                       )
     
     print "Client key names: ", master.clients.keys()
@@ -233,23 +250,31 @@ while 1:
  #   print "coil 8 toggled:", master.clients[1].readCoil(8)
 
     response = master.clients[1].readReg(3,2)
-    current_temp[2] = response.getRegister(0)          # first register in list (reg 3 of client)
-    current_temp[3] = response.getRegister(1)          # second register in list (reg 4 of client)
-    current_temps()
+    response2 = master.clients[2].readReg(3,2)
+    current_temp[2] = response.getRegister(0) / 10.0        # first register in list (reg 3 of client)
+    current_temp[3] = response.getRegister(1) / 10.0        # second register in list (reg 4 of client)
+    current_temps() 
+    #   this is for the water temps from the TARM Room
+    inject_temp = response2.getRegister(0)               # registers in tarm list
+    exchange_temp = response2.getRegister(1)
+    print
+    print "Injector temp = ", inject_temp / 10.0
+    print "Exchanger temp = ", exchange_temp / 10.0
 	#  print "all temps = ", response.registers             # prints entire list
     command_info()                                        # print status and commands
 	
-    sleep(2)
+    sleep(3)
     check_commands()                                 # process commands, if entered
     count = count + 1
-    if count > 30 :                                  # check every minute if any setpoint changes
+    if count > max_count :                                  # check every minute if any setpoint changes
        check_temps()
        count = 0
 
     s = datetime.now().strftime('%H:%M:%S')          # get time now
     time = s.split(':')
     msg = zone_names[2] + ' ' + str(current_temp[2])
-    if time[0] in email_times and time[1] == '00' and int(time[2]) < 3 :  # send just once each time
+	             # time[0] is hrs, time[1] is minutes, time[2] is seconds 
+    if time[0] in email_times and time[1] == '00' and int(time[2]) < 4 :  # send just once each time
        gm = Gmail('aphouse77@gmail.com', '22java22')
        msg = zone_names[2] + ' ' + str(current_temp[2]) + '     ' + zone_names[3] + ' ' + str(current_temp[3])
        gm.send_message('Temps at home', msg)
