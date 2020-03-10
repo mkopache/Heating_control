@@ -2,6 +2,8 @@
    Mudbus TCP/IP modbus interface in conjuntion with python under Windows 
    program
    V1.0   1/24/16
+          1/6/17 added new thermosensors for hot water pex to zones.
+		  11/16/18 - added thermosensor for zone 4, upstairs bathroom
 */
 
 #include <SPI.h>
@@ -30,10 +32,13 @@ OneWire oneWire(ONE_WIRE_BUS);
 // Data wire for sensors is plugged into Digital pin 7 on the Arduino
 
 DallasTemperature sensors(&oneWire);
-DeviceAddress Thermometer0 = {0x28, 0xFF, 0x80, 0x55, 0x54, 0x14, 0x00, 0xE8};
-DeviceAddress Thermometer1 = {0x28, 0xC6, 0xDD, 0x2D, 0x07, 0x00, 0x00, 0x16};
-DeviceAddress Thermometer2 = {0x28, 0xFF, 0x80, 0x55, 0x54, 0x14, 0x00, 0xE8};
-DeviceAddress* Thermosensor[3];
+DeviceAddress Thermometer0 = {0x28, 0xFF, 0x80, 0x55, 0x54, 0x14, 0x00, 0xE8};   // house zone 2
+DeviceAddress Thermometer1 = {0x28, 0xC6, 0xDD, 0x2D, 0x07, 0x00, 0x00, 0x16};   // house zone 3
+DeviceAddress Thermometer2 = {0x28, 0x6C, 0xB5, 0x30, 0x07, 0x00, 0x00, 0x0F};   // house zone 4
+DeviceAddress Thermometer3 = {0x28, 0xFF, 0xEC, 0x91, 0x88, 0x16, 0x03, 0x3E};  // hot H2O zone 2
+DeviceAddress Thermometer4 = {0x28, 0xFF, 0x46, 0x66, 0x91, 0x16, 0x04, 0x00};  // hot H2O zone 3
+DeviceAddress Thermometer5 = {0x28, 0xFF, 0xC3, 0xC9, 0x84, 0x16, 0x03, 0xD6};  // hot H2O zone 4
+DeviceAddress* Thermosensor[6];
 //Instansiate Mudbus class
 Mudbus Mb;
 int i;
@@ -68,16 +73,19 @@ sei();
 void setup(void){
  //setup ethernet and start
   uint8_t mac[]   = { 0x90, 0xA2, 0xDA, 0x00, 0x51, 0x16 };   // not the real address
-  uint8_t ip[]	= { 192, 168, 0, 51};
-  uint8_t gateway[] = { 192,168,0,1};	
+  uint8_t ip[]	= { 192, 168, 1, 51};
+  uint8_t gateway[] = { 192,168,1,1};	
   uint8_t subnet[]  = { 255, 255, 255, 0};
   Ethernet.begin(mac, ip, gateway, subnet);
   Thermosensor[0]= &Thermometer0;
   Thermosensor[1]= &Thermometer1;
-  Thermosensor[2]= &Thermometer2;   
+  Thermosensor[2]= &Thermometer2; 
+  Thermosensor[3]= &Thermometer3; 
+  Thermosensor[4]= &Thermometer4; 
+  Thermosensor[5]= &Thermometer5; 
   sensors.begin();
   // set the resolution to 10 bit (good enough?)
-  for (int i= 0; i < 3; i++) {
+  for (int i= 0; i < 6; i++) {
     sensors.setResolution(*Thermosensor[i], 10);
   }  
   
@@ -108,9 +116,9 @@ void setup(void){
 }
 
 void loop(void){
-        float tempC, tempF;
-        //Run MODBUS service
-        wdt_reset();              // restart reboot function to beginning
+    float tempC, tempF;
+      //Run MODBUS service
+    wdt_reset();              // restart reboot function to beginning
 	Mb.Run();
   
 	//pin 7 to coil 7
@@ -130,10 +138,12 @@ void loop(void){
 	
 	//Add temperature here...
         sensors.requestTemperatures();
-        for (i=0; i<2; i++) {                        // *** only sets first 2 zones 
-           tempC = sensors.getTempC(*Thermosensor[i]);
-           tempF = DallasTemperature::toFahrenheit(tempC);
-	   Mb.R[i+3] = (uint16_t) tempF;
+        delay(500);
+        for (i=0; i<6; i++) {                        // *** get (via oneWire) and sets(via modbus) 3 zones  
+          tempC = sensors.getTempC(*Thermosensor[i]);
+          tempF = DallasTemperature::toFahrenheit(tempC) *10;  // to get 10ths
+	      Mb.R[i+3] = (uint16_t) tempF;           // temps stat at R3
+          delay(100);
            #ifdef DEBUG
               Serial.print(i,"temp = ");
               Serial.println(tempF);
